@@ -3,6 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <title>Duplicate Title & Description Checker</title>
+
 <style>
     body { font-family: Arial, sans-serif; padding: 20px; background: #f8f9fa; }
 
@@ -13,6 +14,7 @@
         cursor: pointer; margin-top: 10px;
         border-radius: 5px;
     }
+
     table { width: 100%; border-collapse: collapse; margin-top: 20px; background: #fff; }
     th, td { padding: 10px; border: 1px solid #ccc; }
     th { background: #333; color: #fff; }
@@ -46,25 +48,23 @@
 <h2>Duplicate Title & Meta Description Checker</h2>
 
 <p>Paste URLs (one per line):</p>
-<textarea id="urlInput" placeholder="https://site1.com/page1
-https://site1.com/page2
-https://site2.com/blog"></textarea>
+<textarea id="urlInput" placeholder="https://site1.com
+https://site2.com
+https://site3.com"></textarea>
 
 <br>
 <button onclick="startCheck()">Check</button>
 
 <!-- Loading bar -->
-<div id="progressContainer">
-    <div id="progressBar"></div>
-</div>
+<div id="progressContainer"><div id="progressBar"></div></div>
 <p id="progressText"></p>
 
 <div id="result"></div>
 
 <script>
-async function fetchFromServer(url) {
-    const response = await fetch(`/api/fetch?url=${encodeURIComponent(url)}`);
-    return await response.json();
+async function getPageHTML(url) {
+    const res = await fetch(`/api/proxy?url=${encodeURIComponent(url)}`);
+    return await res.json();
 }
 
 async function startCheck() {
@@ -72,42 +72,57 @@ async function startCheck() {
     resultDiv.innerHTML = "";
 
     const urls = document.getElementById("urlInput").value
-        .split("\n").map(u => u.trim()).filter(u => u);
+        .split("\n")
+        .map(u => u.trim())
+        .filter(u => u);
 
-    if (urls.length === 0) {
-        alert("Please enter URLs.");
+    if (!urls.length) {
+        alert("Please enter URLs!");
         return;
     }
 
-    // Show loading bar
-    document.getElementById("progressContainer").style.display = "block";
-    document.getElementById("progressText").style.display = "block";
+    // Loading bar
+    const bar = document.getElementById("progressBar");
+    const container = document.getElementById("progressContainer");
+    const text = document.getElementById("progressText");
+    container.style.display = "block";
+    text.style.display = "block";
 
-    const metaData = [];
+    const results = [];
     let completed = 0;
 
     for (let url of urls) {
-        const data = await fetchFromServer(url);
-        metaData.push(data);
+        const { html } = await getPageHTML(url);
+
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(html || "", "text/html");
+
+        const titles = [...doc.querySelectorAll("title")];
+        const descriptions = [...doc.querySelectorAll('meta[name="description"]')];
+
+        results.push({
+            url,
+            title: titles[0]?.innerText.trim() || "No Title",
+            description: descriptions[0]?.content?.trim() || "No Description",
+            titleCount: titles.length,
+            descCount: descriptions.length
+        });
 
         completed++;
-
-        // Update progress bar
-        let percent = Math.round((completed / urls.length) * 100);
-        document.getElementById("progressBar").style.width = percent + "%";
-        document.getElementById("progressText").innerText = `Checking... ${percent}% completed`;
+        const percent = Math.round((completed / urls.length) * 100);
+        bar.style.width = percent + "%";
+        text.innerText = `Checking... ${percent}% completed`;
     }
 
-    document.getElementById("progressText").innerText = "Processing results…";
-
-    generateReport(metaData);
+    text.innerText = "Processing results…";
+    displayResults(results);
 }
 
-function generateReport(metaData) {
+function displayResults(metaData) {
     let html = "<h3>Duplicate Report</h3><table>";
     html += "<tr><th>Type</th><th>Value</th><th>URLs</th></tr>";
 
-    // MULTI-PAGE DUPLICATES
+    // MULTI PAGE DUPLICATES
     const titleMap = {};
     const descMap = {};
 
@@ -128,26 +143,24 @@ function generateReport(metaData) {
         }
     }
 
-    // SINGLE-PAGE CHECK
+    // SINGLE-PAGE DUP CHECK
     html += `<tr><th colspan="3">Single Page Duplicate Check</th></tr>`;
 
     metaData.forEach(item => {
         let issues = [];
 
         if (item.titleCount > 1) issues.push("⚠ Multiple <title> tags found");
-        if (item.descCount > 1) issues.push("⚠ Multiple Meta Descriptions found");
+        if (item.descCount > 1) issues.push("⚠ Multiple meta descriptions found");
 
         html += `<tr>
             <td>${item.url}</td>
-            <td colspan="2">${issues.length ? issues.join("<br>") : "No duplicate tags inside the page"}</td>
+            <td colspan="2">${issues.length ? issues.join("<br>") : "No internal duplicate tags"}</td>
         </tr>`;
     });
 
     html += "</table>";
-
     document.getElementById("result").innerHTML = html;
 
-    // Complete progress bar
     document.getElementById("progressText").innerText = "Completed!";
 }
 </script>
