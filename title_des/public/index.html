@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Duplicate Title & Description Checker</title>
+<style>
+    body { font-family: Arial, sans-serif; padding: 20px; background: #f8f9fa; }
+
+    textarea { width: 100%; height: 150px; padding: 10px; }
+    button {
+        padding: 10px 20px;
+        background: #007bff; border: none; color: #fff;
+        cursor: pointer; margin-top: 10px;
+        border-radius: 5px;
+    }
+    table { width: 100%; border-collapse: collapse; margin-top: 20px; background: #fff; }
+    th, td { padding: 10px; border: 1px solid #ccc; }
+    th { background: #333; color: #fff; }
+    tr:nth-child(even) { background: #f2f2f2; }
+
+    /* Loading Bar */
+    #progressContainer {
+        width: 100%;
+        background: #ddd;
+        height: 20px;
+        border-radius: 10px;
+        margin-top: 20px;
+        display: none;
+        overflow: hidden;
+    }
+    #progressBar {
+        height: 20px;
+        width: 0%;
+        background: #28a745;
+        transition: width 0.3s;
+    }
+    #progressText {
+        margin-top: 8px;
+        font-weight: bold;
+        display: none;
+    }
+</style>
+</head>
+<body>
+
+<h2>Duplicate Title & Meta Description Checker</h2>
+
+<p>Paste URLs (one per line):</p>
+<textarea id="urlInput" placeholder="https://site1.com/page1
+https://site1.com/page2
+https://site2.com/blog"></textarea>
+
+<br>
+<button onclick="startCheck()">Check</button>
+
+<!-- Loading bar -->
+<div id="progressContainer">
+    <div id="progressBar"></div>
+</div>
+<p id="progressText"></p>
+
+<div id="result"></div>
+
+<script>
+async function fetchFromServer(url) {
+    const response = await fetch(`/api/fetch?url=${encodeURIComponent(url)}`);
+    return await response.json();
+}
+
+async function startCheck() {
+    const resultDiv = document.getElementById("result");
+    resultDiv.innerHTML = "";
+
+    const urls = document.getElementById("urlInput").value
+        .split("\n").map(u => u.trim()).filter(u => u);
+
+    if (urls.length === 0) {
+        alert("Please enter URLs.");
+        return;
+    }
+
+    // Show loading bar
+    document.getElementById("progressContainer").style.display = "block";
+    document.getElementById("progressText").style.display = "block";
+
+    const metaData = [];
+    let completed = 0;
+
+    for (let url of urls) {
+        const data = await fetchFromServer(url);
+        metaData.push(data);
+
+        completed++;
+
+        // Update progress bar
+        let percent = Math.round((completed / urls.length) * 100);
+        document.getElementById("progressBar").style.width = percent + "%";
+        document.getElementById("progressText").innerText = `Checking... ${percent}% completed`;
+    }
+
+    document.getElementById("progressText").innerText = "Processing results…";
+
+    generateReport(metaData);
+}
+
+function generateReport(metaData) {
+    let html = "<h3>Duplicate Report</h3><table>";
+    html += "<tr><th>Type</th><th>Value</th><th>URLs</th></tr>";
+
+    // MULTI-PAGE DUPLICATES
+    const titleMap = {};
+    const descMap = {};
+
+    metaData.forEach(item => {
+        (titleMap[item.title] = titleMap[item.title] || []).push(item.url);
+        (descMap[item.description] = descMap[item.description] || []).push(item.url);
+    });
+
+    for (let title in titleMap) {
+        if (titleMap[title].length > 1) {
+            html += `<tr><td>Duplicate Title</td><td>${title}</td><td>${titleMap[title].join("<br>")}</td></tr>`;
+        }
+    }
+
+    for (let desc in descMap) {
+        if (descMap[desc].length > 1) {
+            html += `<tr><td>Duplicate Description</td><td>${desc}</td><td>${descMap[desc].join("<br>")}</td></tr>`;
+        }
+    }
+
+    // SINGLE-PAGE CHECK
+    html += `<tr><th colspan="3">Single Page Duplicate Check</th></tr>`;
+
+    metaData.forEach(item => {
+        let issues = [];
+
+        if (item.titleCount > 1) issues.push("⚠ Multiple <title> tags found");
+        if (item.descCount > 1) issues.push("⚠ Multiple Meta Descriptions found");
+
+        html += `<tr>
+            <td>${item.url}</td>
+            <td colspan="2">${issues.length ? issues.join("<br>") : "No duplicate tags inside the page"}</td>
+        </tr>`;
+    });
+
+    html += "</table>";
+
+    document.getElementById("result").innerHTML = html;
+
+    // Complete progress bar
+    document.getElementById("progressText").innerText = "Completed!";
+}
+</script>
+
+</body>
+</html>
